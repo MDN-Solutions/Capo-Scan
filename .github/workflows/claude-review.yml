@@ -1,0 +1,77 @@
+name: Claude PR Review
+
+# Automatic review when a PR is opened, reopened or marked ready for review.
+# To review again after new pushes, comment "@claude review" on the PR.
+# PRs from forks are skipped by the action (no secrets are exposed to them).
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Review with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are reviewing a pull request for Capo-Scan: an offline OBD-II
+            automotive scanner with a 3D view of the vehicle.
+            Stack: Godot 4 / GDScript (godot/), C++20 diagnostic core (core/),
+            C++ GDExtension (ext-diag/), Rust GDExtension with SQLite (ext-data/),
+            Python tooling (tools/), 32-bit J2534 bridge (bridge-j2534/).
+
+            Read the diff with `gh pr diff` and the description with `gh pr view`.
+            Report only real problems, in this order of importance:
+
+            1. Bugs and edge cases. In ELM327/OBD-II code, check handling of
+               NO DATA, "?", SEARCHING..., UNABLE TO CONNECT, timeouts and
+               malformed or short responses.
+            2. Safety and memory. C++: undefined behavior, ownership, out-of-bounds
+               reads when parsing bytes. Rust: `unsafe`, `unwrap()`/`expect()` on
+               fallible paths. SQL built by string concatenation instead of
+               parameters. Secrets or credentials committed.
+            3. Diagnostic rules. The app must never state that a DTC confirms a
+               faulty part. Clearing codes needs explicit confirmation and an
+               audit log entry.
+            4. Project conventions. Component IDs follow docs/components.md
+               (e.g. `engine.intake.manifold`). UI strings go through `tr()`.
+               Third-party 3D models only if CC0 or our own, with the license
+               recorded.
+            5. Tests. Changes in core/ and ext-data/ need tests (GoogleTest /
+               cargo test).
+
+            Do not comment on formatting that clang-format, rustfmt, clippy or
+            ruff already enforce. Do not praise or restate the code.
+
+            For a problem on a specific line, post an inline comment with
+            mcp__github_inline_comment__create_inline_comment. Start it with
+            the severity ([high], [medium] or [low]) and include a suggested fix.
+            Finish with exactly one top-level comment via `gh pr comment`: a
+            two-line summary of the PR, then the problems grouped by severity.
+            If there are no problems, say so in one line.
+
+            Write every comment in Brazilian Portuguese.
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
