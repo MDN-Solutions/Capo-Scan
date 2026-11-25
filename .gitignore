@@ -1,0 +1,21 @@
+# Godot
+godot/.godot/
+godot/export_presets.cfg
+*.import
+# Binários gerados
+godot/bin/*.dll
+godot/bin/*.so
+build/
+cmake-build-*/
+# Rust
+ext-data/target/
+# Python
+__pycache__/
+.venv/
+# Assets pesados / licenciados (não versionar)
+godot/assets/carros/*.glb
+godot/data/*.db
+# Sistema
+.DS_Store
+.vscode/
+.idea/
