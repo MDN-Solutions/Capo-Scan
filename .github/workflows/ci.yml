@@ -1,0 +1,405 @@
+name: CI
+
+# Stage 1  formatting and linters (fast, run in parallel)
+# Stage 2  clippy + build and tests on Windows (MSVC x64/x86) and Linux (GCC, Clang),
+#          with a check that the binaries really have the exploit mitigations
+# Stage 3  ASan+UBSan, TSan, clang-tidy, libFuzzer, OBD-II emulator tests
+# Gate     "CI OK" is the only required status check for branch protection.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  schedule:
+    # Weekly run: catches breakage from new runner images/toolchains and runs
+    # the fuzzers for longer.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CLICOLOR_FORCE: "1"
+  # C++ directories checked by clang-format and clang-tidy.
+  CPP_DIRS: core app ext-diag bridge-j2534
+  # LLVM used for sanitizers, clang-tidy and fuzzing (Ubuntu 24.04 packages).
+  LLVM_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------- stage 1 --
+  rustfmt:
+    name: rustfmt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt --no-self-update && rustup default stable
+      - run: cargo fmt --all --check
+
+  clang-format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-tools
+      - name: Check C++ formatting
+        run: |
+          read -ra dirs <<< "${CPP_DIRS}"
+          mapfile -t files < <(git ls-files -- "${dirs[@]}" | grep -E '\.(c|cc|cpp|cxx|h|hh|hpp|hxx|inl|ipp)$' || true)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No C++ files to check."
+            exit 0
+          fi
+          clang-format --version
+          clang-format --dry-run --Werror "${files[@]}"
+
+  typos:
+    name: typos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/install-tool
+        with:
+          url: https://github.com/crate-ci/typos/releases/download/v1.52.2/typos-v1.52.2-x86_64-unknown-linux-musl.tar.gz
+          sha256: 3b13d1291281d39d01822e54035636487a7a0f228e70097899b1e33aeb0e7e93
+          binary: typos
+      - run: typos --format brief
+
+  workflows:
+    name: Workflows (actionlint, zizmor)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/install-tool
+        with:
+          url: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          sha256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          binary: actionlint
+      - name: actionlint (syntax, expressions, shellcheck on run steps)
+        run: actionlint
+      - uses: ./.github/actions/ci-tools
+      - name: zizmor (security audit of the workflows)
+        env:
+          # Online audits: checks that every pinned SHA really belongs to the
+          # action's repository (impostor commits) and known-vulnerable actions.
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --format=github --persona=regular .
+
+  scripts:
+    name: Python & GDScript lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-tools
+      - name: ruff (tools/ and scripts/)
+        run: |
+          ruff check --output-format=github tools scripts
+          ruff format --check tools scripts
+      - name: gdtoolkit (godot/)
+        run: |
+          gdlint godot
+          gdformat --check godot
+
+  # ---------------------------------------------------------------- stage 2 --
+  clippy:
+    name: clippy
+    needs: [rustfmt, clang-format, typos, workflows, scripts]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy --no-self-update && rustup default stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # Only main writes the cache, so a pull request cannot poison it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+  build:
+    name: Build & test (${{ matrix.name }})
+    needs: [rustfmt, clang-format, typos, workflows, scripts]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux GCC
+            os: ubuntu-24.04
+            preset: ci-gcc
+            rust: true
+          - name: Linux Clang
+            os: ubuntu-24.04
+            preset: ci-clang
+            compiler: clang++-20
+            rust: true
+          - name: Windows MSVC x64
+            os: windows-2025
+            preset: ci-msvc
+            arch: x64
+            rust: true
+          - name: Windows MSVC x86
+            os: windows-2025
+            preset: ci-msvc-x86
+            arch: x86
+            rust: false
+    env:
+      PRESET: ${{ matrix.preset }}
+      COMPILER: ${{ matrix.compiler }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends ninja-build "clang-${LLVM_VERSION}"
+
+      - name: MSVC developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Install Rust
+        if: matrix.rust
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: matrix.rust
+        with:
+          key: ${{ matrix.preset }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Configure
+        run: cmake --preset "${PRESET}" ${COMPILER:+-DCMAKE_CXX_COMPILER="${COMPILER}"}
+
+      - name: Build
+        run: cmake --build --preset "${PRESET}"
+
+      - name: Test (C++)
+        run: ctest --preset "${PRESET}"
+
+      - name: Test (Rust)
+        if: matrix.rust
+        run: cargo test --workspace --all-features --locked
+
+      - name: Verify exploit mitigations in the binaries
+        run: |
+          cmake --install "build/${PRESET}" --prefix stage
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            files=()
+            for file in stage/bin/mdn-scan.exe stage/bin/ext_data.dll; do
+              if [[ -f "${file}" ]]; then files+=("${file}"); fi
+            done
+            python scripts/check-hardening-pe.py --require-cet "${files[@]}"
+          else
+            scripts/check-hardening.sh --require-cet stage/bin/mdn-scan
+            scripts/check-hardening.sh stage/lib/*.so
+          fi
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: junit-${{ matrix.preset }}
+          path: build/${{ matrix.preset }}/junit.xml
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------- stage 3 --
+  sanitizers:
+    name: Sanitizers (${{ matrix.name }})
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ASan + UBSan
+            preset: asan
+          - name: TSan
+            preset: tsan
+    env:
+      PRESET: ${{ matrix.preset }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install LLVM
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends ninja-build \
+            "clang-${LLVM_VERSION}" "libclang-rt-${LLVM_VERSION}-dev"
+      - name: Lower ASLR entropy (required by ASan/TSan on recent kernels)
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+      - run: cmake --preset "${PRESET}" -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}"
+      - run: cmake --build --preset "${PRESET}"
+      - run: ctest --preset "${PRESET}"
+
+  clang-tidy:
+    name: clang-tidy
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install LLVM
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends ninja-build \
+            "clang-${LLVM_VERSION}" "clang-tidy-${LLVM_VERSION}"
+      - name: Configure (compile_commands.json)
+        run: cmake --preset tidy -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}"
+      - name: Run clang-tidy
+        run: |
+          read -ra dirs <<< "${CPP_DIRS}"
+          regex="^${GITHUB_WORKSPACE}/($(IFS='|'; echo "${dirs[*]}"))/"
+          "clang-tidy-${LLVM_VERSION}" --version
+          "run-clang-tidy-${LLVM_VERSION}" -p build/tidy -quiet \
+            -clang-tidy-binary "clang-tidy-${LLVM_VERSION}" "${regex}"
+
+  fuzz:
+    name: Fuzzing (libFuzzer)
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      # Per fuzzer: 1 minute on pull requests/pushes, 15 minutes weekly.
+      FUZZ_SECONDS: ${{ github.event_name == 'schedule' && '900' || '60' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install LLVM
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends ninja-build \
+            "clang-${LLVM_VERSION}" "libclang-rt-${LLVM_VERSION}-dev"
+      - name: Lower ASLR entropy (required by ASan on recent kernels)
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+      - run: cmake --preset fuzz -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DMDN_SCAN_FUZZ_SECONDS="${FUZZ_SECONDS}"
+      - run: cmake --build --preset fuzz
+      - run: ctest --preset fuzz
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-crashes
+          path: build/fuzz/**/artifacts/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  obd-emulator:
+    name: OBD-II emulator tests
+    needs: [build]
+    # Enable with the repository variable OBD_EMULATOR=true once integration tests exist.
+    if: vars.OBD_EMULATOR == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      MDN_SCAN_OBD_ENDPOINT: 127.0.0.1:35000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/ci-tools
+      - name: Install build tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends ninja-build
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+      - name: Start ELM327 emulator
+        run: |
+          nohup elm -n 35000 -s car -b "${RUNNER_TEMP}/elm.out" > "${RUNNER_TEMP}/elm.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/35000) 2>/dev/null; then
+              echo "Emulator listening on ${MDN_SCAN_OBD_ENDPOINT}"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "${RUNNER_TEMP}/elm.log"
+          exit 1
+      - run: cmake --preset ci-gcc
+      - run: cmake --build --preset ci-gcc
+      - run: ctest --preset integration
+      - name: Emulator log
+        if: always()
+        run: cat "${RUNNER_TEMP}/elm.log"
+
+  # ------------------------------------------------------------------- gate --
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [rustfmt, clang-format, typos, workflows, scripts, clippy, build, sanitizers, clang-tidy, fuzz, obd-emulator]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: All jobs passed (or were skipped on purpose)
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            if [[ "${result}" != "success" && "${result}" != "skipped" ]]; then
+              echo "::error::At least one job did not succeed (${result})."
+              exit 1
+            fi
+          done

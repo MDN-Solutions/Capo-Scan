@@ -1,0 +1,13 @@
+# Python tools used by the CI workflows, installed with hash checking:
+#   pip install --require-hashes --no-deps -r .github/requirements/ci-tools.txt
+#
+# Regenerate after editing. --exclude-newer applies the same 7-day cooldown as
+# Dependabot: versions published in the last week are not used yet.
+#   uv pip compile --python-version 3.13 --generate-hashes --universal \
+#     --exclude-newer "$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)" \
+#     .github/requirements/ci-tools.in -o .github/requirements/ci-tools.txt
+clang-format==23.1.5
+ruff==0.17.5
+gdtoolkit==4.5.0
+zizmor==1.32.0
+ELM327-emulator==4.0.0

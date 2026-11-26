@@ -1,0 +1,10 @@
+# Spell checker (crate-ci/typos). Project docs and UI text are partly in
+# Portuguese: add Portuguese words that look like English typos below.
+[files]
+extend-exclude = ["Cargo.lock", "*.png", "*.svg", "*.glb", "godot/assets/"]
+
+[default.extend-words]
+# Portuguese
+auxiliar = "auxiliar"
+comando = "comando"
+eles = "eles"

@@ -1,0 +1,220 @@
+name: Release
+
+# 1. release-please keeps a "Release PR" open with the next version and the
+#    changelog (from the Conventional Commits on main).
+# 2. Merging that PR creates a DRAFT GitHub release and its tag.
+# 3. The packages are built from the tagged commit, tested, checked for exploit
+#    mitigations and smoke-tested: Windows ZIP + NSIS installer, Linux tar.gz +
+#    AppImage.
+# 4. SHA256SUMS and a signed SLSA build provenance attestation (Sigstore) are
+#    created, everything is uploaded, and only then the release is published.
+#    This works with GitHub "immutable releases" (assets cannot change after
+#    publishing).
+#
+# No caches are used here, so nothing from a pull request can reach a release.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Release PR / tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      sha: ${{ steps.release.outputs.sha }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          # A PR opened with the default GITHUB_TOKEN does not trigger CI, so the
+          # Release PR could never get "CI OK". See docs/PIPELINE.md.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  package:
+    name: Package (${{ matrix.name }})
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-2025
+          - name: Linux x86_64
+            os: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.release-please.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.sha }}
+          persist-credentials: false
+
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends ninja-build
+
+      - name: MSVC developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - name: Install NSIS (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if ! command -v makensis >/dev/null; then
+            choco install nsis --yes --no-progress
+            echo "C:\\Program Files (x86)\\NSIS" >> "${GITHUB_PATH}"
+          fi
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - name: Build
+        run: |
+          cmake --preset release
+          cmake --build --preset release
+
+      - name: Test
+        run: ctest --preset release
+
+      - name: Check that the binary reports the release version
+        run: |
+          exe=build/release/app/mdn-scan
+          [[ "${RUNNER_OS}" == "Windows" ]] && exe="${exe}.exe"
+          output="$("${exe}" --version | tr -d '\r')"
+          echo "${output}"
+          [[ "${output}" == "mdn-scan ${VERSION}" ]]
+
+      - name: Verify exploit mitigations
+        run: |
+          cmake --install build/release --prefix stage --strip
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            python scripts/check-hardening-pe.py --require-cet stage/bin/mdn-scan.exe stage/bin/ext_data.dll
+          else
+            scripts/check-hardening.sh --require-cet stage/bin/mdn-scan
+            scripts/check-hardening.sh stage/lib/*.so
+          fi
+
+      - name: Create packages (CPack)
+        run: |
+          cpack --config build/release/CPackConfig.cmake -B build/release/packages
+          shopt -s nullglob
+          mkdir -p dist
+          packages=(build/release/packages/mdn-scan-*.{zip,exe,tar.gz})
+          cp "${packages[@]}" dist/
+          ls -la dist
+
+      - name: Install linuxdeploy (Linux)
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/install-tool
+        with:
+          url: https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+          sha256: c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
+          binary: linuxdeploy-x86_64.AppImage
+
+      - name: Create AppImage (Linux)
+        if: runner.os == 'Linux'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          cmake --install build/release --prefix AppDir/usr --strip
+          LDAI_OUTPUT="dist/mdn-scan-${VERSION}-linux-x86_64.AppImage" \
+            linuxdeploy-x86_64.AppImage --appdir AppDir \
+              --executable AppDir/usr/bin/mdn-scan \
+              --desktop-file AppDir/usr/share/applications/mdn-scan.desktop \
+              --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/mdn-scan.png \
+              --output appimage
+
+      - name: Smoke-test the packages
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          mkdir -p smoke
+          expected="mdn-scan ${VERSION}"
+          check() { local out; out="$("$@" --version | tr -d '\r')"; echo "$1: ${out}"; [[ "${out}" == "${expected}" ]]; }
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            (cd smoke && cmake -E tar xf "../dist/mdn-scan-${VERSION}-windows-x64.zip")
+            check "smoke/mdn-scan-${VERSION}-windows-x64/bin/mdn-scan.exe"
+            test -f "dist/mdn-scan-${VERSION}-windows-x64.exe"
+          else
+            tar -xzf "dist/mdn-scan-${VERSION}-linux-x86_64.tar.gz" -C smoke
+            check "smoke/mdn-scan-${VERSION}-linux-x86_64/bin/mdn-scan"
+            chmod +x "dist/mdn-scan-${VERSION}-linux-x86_64.AppImage"
+            check "dist/mdn-scan-${VERSION}-linux-x86_64.AppImage"
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages-${{ runner.os }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Checksums, provenance and publish
+    needs: [release-please, package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write # upload the assets and publish the draft release
+      id-token: write # Sigstore signature of the attestation
+      attestations: write # store the build provenance attestation
+    env:
+      TAG: ${{ needs.release-please.outputs.tag }}
+      VERSION: ${{ needs.release-please.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: packages-*
+          merge-multiple: true
+          path: dist
+
+      - name: SHA256SUMS
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Build provenance attestation (SLSA, signed with Sigstore)
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/SHA256SUMS
+
+      - name: Upload assets and publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "${BUNDLE}" "dist/mdn-scan-${VERSION}.sigstore.json"
+          gh release upload "${TAG}" dist/* --repo "${GITHUB_REPOSITORY}" --clobber
+          gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest

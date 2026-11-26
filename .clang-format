@@ -1,0 +1,22 @@
+# Checked in CI with the clang-format version pinned in .github/workflows/ci.yml
+# (pip install clang-format==<version> to get the same one locally).
+BasedOnStyle: Google
+Language: Cpp
+Standard: c++20
+IndentWidth: 4
+ColumnLimit: 100
+AccessModifierOffset: -4
+DerivePointerAlignment: false
+PointerAlignment: Left
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Project headers, then third-party, then the standard library.
+  - Regex: '^"'
+    Priority: 1
+  - Regex: '^<(gtest|gmock|godot_cpp)/'
+    Priority: 2
+  - Regex: '^<[a-z_]+>$'
+    Priority: 3
+  - Regex: '.*'
+    Priority: 2
+InsertNewlineAtEOF: true

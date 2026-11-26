@@ -1,0 +1,43 @@
+# Weekly updates for pinned dependencies. The commit-message prefixes keep the
+# PR titles in Conventional Commits format (checked by pr-title.yml).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/*"]
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      github-actions:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: fix
+      prefix-development: build
+      include: scope
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: pip
+    directory: /.github/requirements
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      ci-tools:
+        patterns: ["*"]
+    cooldown:
+      default-days: 7
