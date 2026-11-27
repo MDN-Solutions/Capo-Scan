@@ -31,7 +31,7 @@ ECUs, data packages), so the C++ side is checked at several levels:
 - **Everything is pinned and verified:** actions by commit SHA; googletest by
   SHA-256 and Corrosion by commit (`cmake/`); Cargo deps by `Cargo.lock` with
   `--locked`; Python CI tools with `pip --require-hashes`
-  (`.github/requirements/ci-tools.txt`); typos, actionlint, cargo-deny, gitleaks
+  (`.github/requirements/*.txt`, lint tools from wheels only); typos, actionlint, cargo-deny, gitleaks
   and linuxdeploy by SHA-256 (`.github/actions/install-tool`).
 - **Updates:** Dependabot (actions, Cargo, Python CI tools) with a 7-day
   cooldown, so a freshly published malicious version is not picked up at once.
@@ -101,8 +101,10 @@ TCP port 35000), which also produces `SEARCHING...`, multi-frame responses and
    the status check **`CI OK`** only, require linear history, block force
    pushes. Settings → General → Pull Requests: allow **squash merging only**,
    with "Default commit message" = **Pull request title**.
-2. **Settings → Code security:** enable Dependabot alerts and security updates,
-   secret scanning and push protection, private vulnerability reporting.
+2. **Settings → Code security:** enable the **Dependency graph** (the
+   "Dependency review" job fails with `Forbidden` without it), Dependabot alerts
+   and security updates, secret scanning and push protection, private
+   vulnerability reporting.
    Code scanning must use this workflow ("advanced setup"): if CodeQL "default
    setup" is enabled, turn it off.
 3. **Settings → Actions → General:** workflow permissions "Read repository
@@ -144,12 +146,15 @@ load `CMakePresets.json`). Without a Rust toolchain, add `-DMDN_SCAN_BUILD_RUST=
 ## Maintenance
 
 - Dependabot updates the actions, the Cargo dependencies and
-  `.github/requirements/ci-tools.txt`.
+  `.github/requirements/*.txt`.
 - The tools downloaded by `install-tool` (typos, actionlint, cargo-deny,
   gitleaks, linuxdeploy), googletest and Corrosion are updated by hand: change
   the version and the SHA-256 (`sha256sum <file>`) together.
-- `ci-tools.txt` is generated from `ci-tools.in` with the `uv pip compile`
-  command written at the top of `ci-tools.in`.
+- Each `.github/requirements/*.txt` is generated from its `.in` file with the
+  `uv pip compile` command written at the top of `ci-tools.in`.
+- ELM327-emulator only ships an sdist whose `setup.py` rewrites its version
+  when `GITHUB_RUN_NUMBER` is set; the OBD job installs it without that
+  variable and with the build backend from `obd-emulator-build.txt`.
 
 ## Verifying a release
 

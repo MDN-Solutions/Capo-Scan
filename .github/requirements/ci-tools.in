@@ -10,4 +10,3 @@ clang-format==23.1.5
 ruff==0.17.5
 gdtoolkit==4.5.0
 zizmor==1.32.0
-ELM327-emulator==4.0.0

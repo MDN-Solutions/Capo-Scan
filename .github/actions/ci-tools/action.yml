@@ -1,8 +1,9 @@
 name: Python CI tools
 description: >
   Python 3.13 with the CI tools from .github/requirements/ci-tools.txt
-  (clang-format, ruff, gdtoolkit, zizmor, ELM327-emulator), installed with
-  hash checking so a tampered package cannot be installed.
+  (clang-format, ruff, gdtoolkit, zizmor), installed with hash checking so a
+  tampered package cannot be installed, and from wheels only, so no package
+  build code runs.
 
 runs:
   using: composite
@@ -16,4 +17,4 @@ runs:
       shell: bash
       run: >
         python -m pip install --disable-pip-version-check --require-hashes --no-deps
-        -r "${GITHUB_WORKSPACE}/.github/requirements/ci-tools.txt"
+        --only-binary :all: -r "${GITHUB_WORKSPACE}/.github/requirements/ci-tools.txt"

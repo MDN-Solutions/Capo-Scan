@@ -1,0 +1,4 @@
+# ELM327 adapter emulator for the OBD-II integration tests (ci.yml, job
+# "OBD-II emulator tests"). Install obd-emulator-build.txt first.
+# Regenerate with the uv command in ci-tools.in (use this file's name).
+ELM327-emulator==4.0.0

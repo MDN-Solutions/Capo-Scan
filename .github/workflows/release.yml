@@ -13,10 +13,11 @@ name: Release
 #
 # No caches are used here, so nothing from a pull request can reach a release.
 
+# Only pushes to main: a manual trigger would let a release job run on an
+# arbitrary ref with write permissions.
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions: {}
 
@@ -70,10 +71,18 @@ jobs:
       run:
         shell: bash
     steps:
+      # The commit that triggered this run (the merged Release PR). It must be
+      # the commit release-please tagged; anything else stops the release.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-please.outputs.sha }}
           persist-credentials: false
+
+      - name: Check that the tagged commit is the one being built
+        env:
+          RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+        run: |
+          echo "built: ${GITHUB_SHA}  tagged: ${RELEASE_SHA}"
+          [[ "${GITHUB_SHA}" == "${RELEASE_SHA}" ]]
 
       - name: Install build tools (Linux)
         if: runner.os == 'Linux'
