@@ -96,6 +96,17 @@ jobs:
         with:
           arch: x64
 
+      - name: Use the MSVC linker for Rust
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Git Bash puts its own (GNU coreutils) link.exe first on PATH, and
+          # rustc would call it instead of the MSVC linker.
+          $linker = Join-Path $env:VCToolsInstallDir "bin\Host$env:VSCMD_ARG_HOST_ARCH\$env:VSCMD_ARG_TGT_ARCH\link.exe"
+          if (-not (Test-Path $linker)) { throw "MSVC linker not found: $linker" }
+          Write-Output "Rust linker: $linker"
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Install NSIS (Windows)
         if: runner.os == 'Windows'
         run: |
