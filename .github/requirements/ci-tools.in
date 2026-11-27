@@ -7,6 +7,6 @@
 #     --exclude-newer "$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)" \
 #     .github/requirements/ci-tools.in -o .github/requirements/ci-tools.txt
 clang-format==23.1.5
-ruff==0.17.5
+ruff==0.17.6
 gdtoolkit==4.5.0
 zizmor==1.32.0
