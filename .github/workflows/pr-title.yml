@@ -1,0 +1,45 @@
+name: PR title
+
+# Pull requests are squash-merged and the title becomes the commit message on
+# main, which release-please reads to pick the next version and write the
+# changelog. So the title must follow Conventional Commits, e.g.
+#   feat(elm327): read freeze frame data
+#   fix(dtc): handle "NO DATA" when no codes are stored
+#   feat!: new data package format      (breaking change)
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  conventional-title:
+    name: Conventional Commits title
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@66e72920af32222769c386d81f89656ebcb6d6d5 # v6.1.4
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            test
+            build
+            ci
+            chore
+            revert
+            style
+          requireScope: false
+          # The subject starts with a lowercase letter: "fix: handle ...".
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" of the title "{title}" must start with a
+            lowercase letter, e.g. "fix(dtc): handle NO DATA responses".

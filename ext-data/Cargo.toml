@@ -1,0 +1,15 @@
+[package]
+name = "ext-data"
+description = "GDExtension for data, licensing and content packages"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[lib]
+# cdylib: loaded by Godot as a GDExtension. rlib: used by tests.
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+# zizmor (https://docs.zizmor.sh) audits the workflows in CI (ci.yml, job
+# "Workflows"). Every exception here must say why it is safe.
+rules:
+  # Suggests "uses: $/..." for local actions; actionlint and the GitHub docs
+  # still use "./...", which is equally safe for actions in this repository.
+  self-repository:
+    disable: true
+
+  # claude.yml must react to comments ("@claude ..."). It never checks out or
+  # runs code from a fork, and claude-code-action only runs for users with
+  # write access to the repository.
+  dangerous-triggers:
+    ignore:
+      - claude.yml
+
+  # claude.yml lets Claude push fix commits, so it keeps the checkout
+  # credentials. It uploads no artifacts, so they cannot leak that way.
+  artipacked:
+    ignore:
+      - claude.yml

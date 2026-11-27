@@ -7,7 +7,11 @@ godot/bin/*.dll
 godot/bin/*.so
 build/
 cmake-build-*/
+CMakeUserPresets.json
+/AppDir/
+/dist/
 # Rust
+/target/
 ext-data/target/
 # Python
 __pycache__/

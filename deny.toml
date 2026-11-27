@@ -1,0 +1,47 @@
+# cargo-deny: vulnerabilities, licenses, banned crates and allowed sources for
+# the Rust workspace. Run locally with: cargo deny check
+
+[graph]
+all-features = true
+
+[advisories]
+# RustSec advisories (vulnerable, unmaintained, unsound) fail the check.
+yanked = "deny"
+unmaintained = "workspace"
+ignore = []
+
+[licenses]
+# Permissive licenses only, plus MPL-2.0 (file-level copyleft; used by the
+# godot-rust "godot" crate). Anything else must be reviewed and added here.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.93
+# The list is the policy for future dependencies, not all of them are in use yet.
+unused-allowed-license = "allow"
+
+[licenses.private]
+# Our own crates are not published (publish = false).
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+
+[sources]
+# Only crates.io. Git dependencies must be added to allow-git explicitly.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

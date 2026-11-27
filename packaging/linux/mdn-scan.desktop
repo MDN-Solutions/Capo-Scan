@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=MDN Scan
+Comment=Offline automotive diagnostics with a 3D vehicle view
+Comment[pt_BR]=Diagnóstico automotivo offline com visualização 3D do veículo
+Exec=mdn-scan
+Icon=mdn-scan
+Terminal=true
+Categories=Utility;

@@ -1,0 +1,5 @@
+# Exploit mitigations for the Rust GDExtension on Windows (MSVC), matching the
+# C++ code: Control Flow Guard and CET shadow stack compatibility. Verified in
+# CI by scripts/check-hardening-pe.py.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-Ccontrol-flow-guard", "-Clink-arg=/CETCOMPAT"]

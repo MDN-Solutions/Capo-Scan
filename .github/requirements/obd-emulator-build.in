@@ -1,0 +1,6 @@
+# Build backend for the ELM327-emulator sdist (it has no wheel on PyPI).
+# Installed first, hash-checked, so the sdist is built with --no-build-isolation
+# and pip does not fetch an unpinned setuptools on its own.
+# Regenerate with the uv command in ci-tools.in (use this file's name).
+setuptools
+wheel

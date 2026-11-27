@@ -1,0 +1,187 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "linux",
+      "hidden": true,
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "windows",
+      "hidden": true,
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "cacheVariables": { "CMAKE_CXX_COMPILER": "cl" }
+    },
+    {
+      "name": "clang",
+      "hidden": true,
+      "inherits": "linux",
+      "cacheVariables": { "CMAKE_CXX_COMPILER": "clang++" }
+    },
+    {
+      "name": "dev",
+      "displayName": "Development (Debug)",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release",
+      "displayName": "Release build used for the packages",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "ci",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "MDN_SCAN_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "ci-gcc",
+      "displayName": "CI: Linux GCC",
+      "inherits": ["ci", "linux"],
+      "cacheVariables": { "CMAKE_CXX_COMPILER": "g++" }
+    },
+    {
+      "name": "ci-clang",
+      "displayName": "CI: Linux Clang",
+      "inherits": ["ci", "clang"]
+    },
+    {
+      "name": "ci-msvc",
+      "displayName": "CI: Windows MSVC x64",
+      "inherits": ["ci", "windows"]
+    },
+    {
+      "name": "ci-msvc-x86",
+      "displayName": "CI: Windows MSVC x86 (32-bit, J2534 bridge)",
+      "inherits": ["ci", "windows"],
+      "cacheVariables": { "MDN_SCAN_BUILD_RUST": "OFF" }
+    },
+    {
+      "name": "asan",
+      "displayName": "AddressSanitizer + UndefinedBehaviorSanitizer",
+      "inherits": ["base", "clang"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-O1 -D_GLIBCXX_DEBUG -D_GLIBCXX_DEBUG_PEDANTIC",
+        "MDN_SCAN_SANITIZERS": "address;undefined",
+        "MDN_SCAN_WARNINGS_AS_ERRORS": "ON",
+        "MDN_SCAN_BUILD_RUST": "OFF"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "ThreadSanitizer",
+      "inherits": ["base", "clang"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-O1",
+        "MDN_SCAN_SANITIZERS": "thread",
+        "MDN_SCAN_WARNINGS_AS_ERRORS": "ON",
+        "MDN_SCAN_BUILD_RUST": "OFF"
+      }
+    },
+    {
+      "name": "fuzz",
+      "displayName": "libFuzzer targets (ASan + UBSan)",
+      "inherits": ["base", "clang"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "MDN_SCAN_SANITIZERS": "address;undefined",
+        "MDN_SCAN_BUILD_FUZZERS": "ON",
+        "MDN_SCAN_BUILD_TESTS": "OFF",
+        "MDN_SCAN_BUILD_RUST": "OFF"
+      }
+    },
+    {
+      "name": "tidy",
+      "displayName": "clang-tidy (compile_commands.json only)",
+      "inherits": ["base", "clang"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MDN_SCAN_BUILD_RUST": "OFF"
+      }
+    },
+    {
+      "name": "codeql",
+      "displayName": "CodeQL C++ build (product code only)",
+      "inherits": ["base", "linux"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "g++",
+        "MDN_SCAN_BUILD_TESTS": "OFF",
+        "MDN_SCAN_BUILD_RUST": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "ci-gcc", "configurePreset": "ci-gcc" },
+    { "name": "ci-clang", "configurePreset": "ci-clang" },
+    { "name": "ci-msvc", "configurePreset": "ci-msvc" },
+    { "name": "ci-msvc-x86", "configurePreset": "ci-msvc-x86" },
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "fuzz", "configurePreset": "fuzz" },
+    { "name": "codeql", "configurePreset": "codeql" }
+  ],
+  "testPresets": [
+    {
+      "name": "unit",
+      "hidden": true,
+      "output": { "outputOnFailure": true, "outputJUnitFile": "junit.xml" },
+      "execution": { "noTestsAction": "error", "timeout": 300 },
+      "filter": { "exclude": { "label": "integration|fuzz" } }
+    },
+    { "name": "dev", "inherits": "unit", "configurePreset": "dev" },
+    { "name": "release", "inherits": "unit", "configurePreset": "release" },
+    { "name": "ci-gcc", "inherits": "unit", "configurePreset": "ci-gcc" },
+    { "name": "ci-clang", "inherits": "unit", "configurePreset": "ci-clang" },
+    { "name": "ci-msvc", "inherits": "unit", "configurePreset": "ci-msvc" },
+    { "name": "ci-msvc-x86", "inherits": "unit", "configurePreset": "ci-msvc-x86" },
+    {
+      "name": "asan",
+      "inherits": "unit",
+      "configurePreset": "asan",
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1:check_initialization_order=1:strict_init_order=1:abort_on_error=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "tsan",
+      "inherits": "unit",
+      "configurePreset": "tsan",
+      "environment": { "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1" }
+    },
+    {
+      "name": "integration",
+      "configurePreset": "ci-gcc",
+      "output": { "outputOnFailure": true, "outputJUnitFile": "junit-integration.xml" },
+      "execution": { "noTestsAction": "ignore", "timeout": 600 },
+      "filter": { "include": { "label": "integration" } }
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz",
+      "output": { "outputOnFailure": true, "verbosity": "verbose" },
+      "execution": { "noTestsAction": "ignore", "timeout": 1800 },
+      "filter": { "include": { "label": "fuzz" } }
+    }
+  ]
+}
