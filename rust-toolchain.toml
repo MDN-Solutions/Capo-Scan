@@ -1,0 +1,6 @@
+# Exact Rust toolchain for local builds, CI and releases, so a new stable
+# release cannot change a build on its own. Bump it on purpose (and keep
+# rust-version in Cargo.toml as the minimum supported version).
+[toolchain]
+channel = "1.100.1"
+profile = "minimal"

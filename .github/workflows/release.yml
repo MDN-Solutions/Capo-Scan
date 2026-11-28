@@ -111,16 +111,20 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           if ! command -v makensis >/dev/null; then
-            choco install nsis --yes --no-progress
+            # Pinned version; Chocolatey verifies the installer checksum.
+            choco install nsis --version=3.13.0 --yes --no-progress
             echo "C:\\Program Files (x86)\\NSIS" >> "${GITHUB_PATH}"
           fi
 
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
 
       - name: Build
         run: |
-          cmake --preset release
+          # Same compilers as the CI matrix: on Windows, MSVC and not a MinGW
+          # gcc that happens to be on PATH.
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then compiler=cl; else compiler=g++; fi
+          cmake --preset release -DCMAKE_CXX_COMPILER="${compiler}"
           cmake --build --preset release
 
       - name: Test
@@ -141,7 +145,7 @@ jobs:
             python scripts/check-hardening-pe.py --require-cet stage/bin/mdn-scan.exe stage/bin/ext_data.dll
           else
             scripts/check-hardening.sh --require-cet stage/bin/mdn-scan
-            scripts/check-hardening.sh stage/lib/*.so
+            scripts/check-hardening.sh stage/lib*/*.so
           fi
 
       - name: Create packages (CPack)

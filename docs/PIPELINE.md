@@ -30,7 +30,7 @@ ECUs, data packages), so the C++ side is checked at several levels:
 
 - **Everything is pinned and verified:** actions by commit SHA; googletest by
   SHA-256 and Corrosion by commit (`cmake/`); Cargo deps by `Cargo.lock` with
-  `--locked`; Python CI tools with `pip --require-hashes`
+  `--locked`; the Rust toolchain by `rust-toolchain.toml`; Python CI tools with `pip --require-hashes`
   (`.github/requirements/*.txt`, lint tools from wheels only); typos, actionlint, cargo-deny, gitleaks
   and linuxdeploy by SHA-256 (`.github/actions/install-tool`).
 - **Updates:** Dependabot (actions, Cargo, Python CI tools) with a 7-day
