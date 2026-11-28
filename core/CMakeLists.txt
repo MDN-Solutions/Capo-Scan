@@ -1,6 +1,9 @@
 # capo_core: diagnostic core (OBD-II, ELM327, ISO-TP, UDS, DTC). C++20, no GUI.
 
 add_library(capo_core STATIC
+  src/obd/obd_dtc.cpp
+  src/obd/obd_response.cpp
+  src/obd/obd_service.cpp
   src/version.cpp)
 add_library(capo::core ALIAS capo_core)
 mdn_scan_target_defaults(capo_core)

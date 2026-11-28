@@ -7,3 +7,7 @@
 #     LIBRARIES capo::core)
 #
 # Seeds: core/fuzz/corpus/<name>/. See cmake/MdnScanFuzzing.cmake.
+
+mdn_scan_add_fuzzer(obd_response
+  SOURCES obd_response_fuzzer.cpp
+  LIBRARIES capo::core)
