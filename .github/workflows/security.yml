@@ -36,6 +36,8 @@ jobs:
           url: https://github.com/EmbarkStudios/cargo-deny/releases/download/0.22.1/cargo-deny-0.22.1-x86_64-unknown-linux-musl.tar.gz
           sha256: 13f7e825e9cb811c2f8de63f29b0f45851dfb53004029f0f2501af524728364d
           binary: cargo-deny-0.22.1-x86_64-unknown-linux-musl/cargo-deny
+      - name: Install Rust (version from rust-toolchain.toml)
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
       - run: cargo deny --locked check --show-stats
 
   dependency-review:

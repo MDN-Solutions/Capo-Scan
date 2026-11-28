@@ -2,7 +2,7 @@ name: CI
 
 # Stage 1  formatting and linters (fast, run in parallel)
 # Stage 2  clippy + build and tests on Windows (MSVC x64/x86) and Linux (GCC, Clang),
-#          with a check that the binaries really have the exploit mitigations
+#          in parallel with stage 1, with a check that the binaries really have the exploit mitigations
 # Stage 3  ASan+UBSan, TSan, clang-tidy, libFuzzer, OBD-II emulator tests
 # Gate     "CI OK" is the only required status check for branch protection.
 
@@ -44,7 +44,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --component rustfmt --no-self-update && rustup default stable
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal --component rustfmt --no-self-update
       - run: cargo fmt --all --check
 
   clang-format:
@@ -134,7 +134,6 @@ jobs:
   # ---------------------------------------------------------------- stage 2 --
   clippy:
     name: clippy
-    needs: [rustfmt, clang-format, typos, workflows, scripts]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -144,7 +143,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --component clippy --no-self-update && rustup default stable
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal --component clippy --no-self-update
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           # Only main writes the cache, so a pull request cannot poison it.
@@ -153,7 +152,6 @@ jobs:
 
   build:
     name: Build & test (${{ matrix.name }})
-    needs: [rustfmt, clang-format, typos, workflows, scripts]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     permissions:
@@ -217,7 +215,7 @@ jobs:
 
       - name: Install Rust
         if: matrix.rust
-        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: matrix.rust
@@ -249,7 +247,7 @@ jobs:
             python scripts/check-hardening-pe.py --require-cet "${files[@]}"
           else
             scripts/check-hardening.sh --require-cet stage/bin/mdn-scan
-            scripts/check-hardening.sh stage/lib/*.so
+            scripts/check-hardening.sh stage/lib*/*.so
           fi
 
       - name: Upload test results
@@ -343,7 +341,8 @@ jobs:
         run: sudo sysctl -w vm.mmap_rnd_bits=28
       - run: cmake --preset fuzz -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" -DMDN_SCAN_FUZZ_SECONDS="${FUZZ_SECONDS}"
       - run: cmake --build --preset fuzz
-      - run: ctest --preset fuzz
+      # In parallel, so the total time stays bounded as fuzzers are added.
+      - run: ctest --preset fuzz --parallel "$(nproc)"
       - name: Upload crashing inputs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -387,7 +386,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends ninja-build
       - name: Install Rust
-        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal --no-self-update
       - name: Start ELM327 emulator
         run: |
           nohup elm -n 35000 -s car -b "${RUNNER_TEMP}/elm.out" > "${RUNNER_TEMP}/elm.log" 2>&1 &

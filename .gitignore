@@ -1,7 +1,6 @@
-# Godot
+# Godot (*.import and export_presets.cfg are versioned: Godot 4 keeps import
+# settings/UIDs in the .import files, and credentials in .godot/)
 godot/.godot/
-godot/export_presets.cfg
-*.import
 # Binários gerados
 godot/bin/*.dll
 godot/bin/*.so

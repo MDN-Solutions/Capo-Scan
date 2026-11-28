@@ -29,3 +29,8 @@ Os títulos de PR seguem [Conventional Commits](https://www.conventionalcommits.
 (`feat(elm327): ...`, `fix(dtc): ...`): eles viram o commit no `main` e geram a
 versão e o changelog. Detalhes da pipeline (CI, segurança, releases) em
 [docs/PIPELINE.md](docs/PIPELINE.md).
+
+## Licença
+
+Software proprietário da MDN Solutions; veja [LICENSE](LICENSE). O acesso público ao
+repositório não concede nenhuma licença de uso.
